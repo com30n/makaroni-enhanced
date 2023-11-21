@@ -18,191 +18,66 @@ import (
 )
 
 func main() {
-	InitLogger()
-	log.Debug("Application starting (debug level)")
-
-	config, err := LoadConfig()
+	address := flag.String("address", os.Getenv("MKRN_ADDRESS"), "Address to serve")
+	multipartMaxMemoryEnv, err := strconv.ParseInt(os.Getenv("MKRN_MULTIPART_MAX_MEMORY"), 0, 64)
 	if err != nil {
-		log.Fatalf("Error loading configuration: %v", err)
+		log.Fatalln(err)
 	}
-
-	makaroni.LogConfig()
-
-	server, err := SetupServer(config)
+	multipartMaxMemory := flag.Int64("multipart-max-memory", multipartMaxMemoryEnv, "Maximum memory for multipart form parser")
+	domain := flag.String("domain-url", os.Getenv("MKRN_DOMAIN_URL"), "Domain url with schema.")
+	domainUrl, err := url.Parse(domain)
 	if err != nil {
-		log.Fatalf("Error setting up server: %v", err)
+		log.Fatal(err)
 	}
 
-	// Start server in a goroutine
-	go func() {
-		log.Infof("Server started on address %s", server.Addr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
+	resultSuffix := flag.String("result-url-prefix", os.Getenv("MKRN_RESULT_SUFFIX"), "Upload result suffix.")
+	domainUrl.Path = resultSuffix
 
-	// Setup graceful shutdown
-	WaitForShutdown(server)
-}
+	logoURL := flag.String("logo-url", os.Getenv("MKRN_LOGO_URL"), "Your logo URL for the form page")
+	style := flag.String("style", os.Getenv("MKRN_STYLE"), "Formatting style")
+	s3Endpoint := flag.String("s3-endpoint", os.Getenv("MKRN_S3_ENDPOINT"), "S3 endpoint")
+	s3Region := flag.String("s3-region", os.Getenv("MKRN_S3_REGION"), "S3 region")
+	s3Bucket := flag.String("s3-bucket", os.Getenv("MKRN_S3_BUCKET"), "S3 bucket")
+	s3KeyID := flag.String("s3-key-id", os.Getenv("MKRN_S3_KEY_ID"), "S3 key ID")
+	s3SecretKey := flag.String("s3-secret-key", os.Getenv("MKRN_S3_SECRET_KEY"), "S3 secret key")
+	help := flag.Bool("help", false, "Print usage")
+	flag.Parse()
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
 
-// InitLogger initializes the logger.
-func InitLogger() {
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp: true,
-	})
-
-	logLevel := os.Getenv("LOG_LEVEL")
-	level, err := log.ParseLevel(logLevel)
+	indexHTML, err := makaroni.RenderIndexPage(*logoURL, *domain)
 	if err != nil {
-		level = log.InfoLevel
-		log.Warn("Invalid LOG_LEVEL, defaulting to Info level, supported levels: ", log.AllLevels)
-	}
-	log.SetLevel(level)
-}
-
-// LoadConfig loads the configuration from flags and environment variables.
-func LoadConfig() (*makaroni.Config, error) {
-	var config makaroni.Config
-
-	rootCmd := &cobra.Command{
-		Use:   "makaroni",
-		Short: "Makaroni is a paste service",
-		Long:  "A web service for sharing code snippets with syntax highlighting",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := viper.Unmarshal(&config); err != nil {
-				log.Fatalf("Error parsing configuration: %v", err)
-			}
-		},
+		log.Fatalln(err)
 	}
 
-	// Define flags
-	flags := rootCmd.Flags()
-	flags.String("address", "", "Address to serve")
-	flags.Int64("multipart-max-memory", 0, "Maximum memory for multipart forms")
-	flags.String("index-url", "", "URL to the index page")
-	flags.String("result-url-prefix", "", "Upload result URL prefix")
-	flags.String("logo-url", "", "Logo URL for the form page")
-	flags.String("favicon-url", "", "Favicon URL")
-	flags.String("style", "", "Formatting style")
-	flags.String("s3-endpoint", "", "S3 endpoint")
-	flags.String("s3-region", "", "S3 region")
-	flags.String("s3-bucket", "", "S3 bucket")
-	flags.String("s3-key-id", "", "S3 key ID")
-	flags.String("s3-secret-key", "", "S3 secret key")
-	flags.Bool("s3-path-style", false, "S3 use path style addressing")
-	flags.Bool("s3-disable-ssl", false, "S3 disable SSL")
-
-	// Bind flags with viper
-	if err := viper.BindPFlags(flags); err != nil {
-		return nil, fmt.Errorf("error binding flags: %w", err)
-	}
-
-	// Setup Viper for environment variables
-	viper.SetEnvPrefix("MKRN")
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	viper.AutomaticEnv()
-
-	// Bind environment variables automatically
-	makaroni.BindEnvVars(config)
-
-	if err := rootCmd.Execute(); err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	return &config, nil
-}
-
-// SetupServer creates and configures the HTTP server.
-func SetupServer(config *makaroni.Config) (*http.Server, error) {
-	indexHTML, err := makaroni.RenderIndexPage(config.LogoURL, config.IndexURL, config.FaviconURL)
+	outputPreHTML, err := makaroni.RenderOutputPre(*logoURL, *domain)
 	if err != nil {
-		return nil, fmt.Errorf("failed to render index page: %w", err)
+		log.Fatalln(err)
 	}
 
-	uploader, err := NewS3Uploader(config)
+	uploadFunc, err := makaroni.NewUploader(*s3Endpoint, *s3Region, *s3Bucket, *s3KeyID, *s3SecretKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create S3 uploader: %w", err)
+		log.Fatalln(err)
 	}
 
-	mux := SetupRoutes(indexHTML, uploader, config)
-
-	return &http.Server{
-		Addr:    config.Address,
-		Handler: mux,
-	}, nil
-}
-
-// NewS3Uploader creates a new S3 uploader.
-func NewS3Uploader(config *makaroni.Config) (*makaroni.Uploader, error) {
-	log.Info("Initializing uploader")
-
-	uploaderConfig := makaroni.UploaderConfig{
-		Endpoint:            config.S3Endpoint,
-		DisableSSL:          config.S3DisableSSL,
-		PathStyleAddressing: config.S3PathStyle,
-		Region:              config.S3Region,
-		Bucket:              config.S3Bucket,
-		KeyID:               config.S3KeyID,
-		Secret:              config.S3SecretKey,
-		// TODO: move to config
-		// Additional settings
-		Timeout:     30 * time.Second,
-		PartSize:    5 * 1024 * 1024, // 5MB parts for multipart uploads
-		Concurrency: 5,               // 5 concurrent uploads
-	}
-
-	uploader, err := makaroni.NewUploader(uploaderConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create uploader: %w", err)
-	}
-
-	return uploader, nil
-}
-
-// SetupRoutes sets up the HTTP routes.
-func SetupRoutes(indexHTML []byte, uploader *makaroni.Uploader, config *makaroni.Config) *http.ServeMux {
-	fileServer := http.FileServer(http.Dir("./resources/static"))
 	mux := http.NewServeMux()
-
-	// Handle static files
-	mux.Handle("/static/", LogStaticFileRequest(http.StripPrefix("/static/", fileServer)))
-
-	// Main handler
 	mux.Handle("/", &makaroni.PasteHandler{
 		IndexHTML:          indexHTML,
-		Uploader:           uploader,
-		ResultURLPrefix:    config.ResultURLPrefix,
-		Style:              config.Style,
-		MultipartMaxMemory: config.MultipartMaxMemory,
-		Config:             config,
+		OutputHTMLPre:      outputPreHTML,
+		Upload:             uploadFunc,
+		ResultURLPrefix:    *domainUrl.String(),
+		Style:              *style,
+		MultipartMaxMemory: *multipartMaxMemory,
 	})
 
-	// TODO: add an error page
-
-	return mux
-}
-
-// LogStaticFileRequest middleware for logging requests to static files
-func LogStaticFileRequest(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Debug("Received request: ", r.Method, " ", r.URL.Path)
-		next.ServeHTTP(w, r)
-	})
-}
-
-// WaitForShutdown waits for a shutdown signal and gracefully shuts down the server.
-func WaitForShutdown(server *http.Server) {
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-
-	log.Info("Shutdown signal received, stopping server...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Errorf("Server shutdown error: %v", err)
+	server := http.Server{
+		Addr:    *address,
+		Handler: mux,
+	}
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalln(err)
 	}
 
 	log.Info("Server stopped successfully")
