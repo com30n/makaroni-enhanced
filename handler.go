@@ -31,7 +31,7 @@ type PasteHandler struct {
 	IndexHTML          []byte
 	Uploader           *Uploader
 	Style              string
-	ResultURL          string
+	ResultURLPrefix    string
 	MultipartMaxMemory int64
 	Config             *Config
 }
@@ -308,8 +308,8 @@ func (p *PasteHandler) processTextUpload(req *http.Request, content, keyRaw, url
 	}
 	keyRaw := uuidV4.String()
 	keyHTML := keyRaw + ".html"
-	urlHTML := p.ResultURL + keyHTML
-	urlRaw := p.ResultURL + keyRaw
+	urlHTML := p.ResultURLPrefix + keyHTML
+	urlRaw := p.ResultURLPrefix + keyRaw
 
 	builder := strings.Builder{}
 	// todo: better templating
