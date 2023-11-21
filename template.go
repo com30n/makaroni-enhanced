@@ -26,7 +26,7 @@ var errorHTML []byte
 // IndexData structure for index page
 type IndexData struct {
 	LogoURL  string
-	domain string
+	Domain   string
 	LangList []string
 	LogoURL    string
 	IndexURL   string
@@ -44,7 +44,7 @@ func renderPage(pageTemplate string, logoURL string, domain string) ([]byte, err
 	result := strings.Builder{}
 	data := IndexData{
 		LogoURL:  logoURL,
-		domain: domain,
+		Domain:   domain,
 		LangList: lexers.Names(false),
 	}
 

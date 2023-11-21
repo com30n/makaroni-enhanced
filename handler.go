@@ -31,7 +31,7 @@ type PasteHandler struct {
 	IndexHTML          []byte
 	Uploader           *Uploader
 	Style              string
-	ResultURLPrefix    string
+	ResultURL          string
 	MultipartMaxMemory int64
 	Config             *Config
 }
@@ -303,67 +303,32 @@ func (p *PasteHandler) processTextUpload(req *http.Request, content, keyRaw, url
 
 	preHtmlPage, err := RenderOutputPre(prePageData)
 	if err != nil {
-		log.Error("Error rendering output pre HTML: ", err)
-		return "", err
+		RespondServerInternalError(w, err)
+		return
+	}
+	keyRaw := uuidV4.String()
+	keyHTML := keyRaw + ".html"
+	urlHTML := p.ResultURL + keyHTML
+	urlRaw := p.ResultURL + keyRaw
+
+	builder := strings.Builder{}
+	// todo: better templating
+	builder.Write(p.OutputHTMLPre)
+	builder.Write([]byte(fmt.Sprintf("<div class=\"nav\"><a href=\"%s\">raw</a></div>", urlRaw)))
+
+	if err := highlight(&builder, content, syntax, p.Style); err != nil {
+		RespondServerInternalError(w, err)
+		return
+	}
+	html := builder.String()
+
+	if err := p.Upload(keyRaw, content, contentTypeText); err != nil {
+		RespondServerInternalError(w, err)
+		return
 	}
 
-	if err := p.Uploader.UploadString(req.Context(), keyRaw, content, contentTypeText, metadata); err != nil {
-		log.Error("Error uploading raw content: ", err)
-		return "", err
-	}
-
-	log.Info("Uploaded raw content with key: ", keyRaw)
-	return string(preHtmlPage), nil
-}
-
-// getFormContent extracts content, file, and header from the form
-func (p *PasteHandler) getFormContent(w http.ResponseWriter, req *http.Request) (string, multipart.File, *multipart.FileHeader, error) {
-	content := req.Form.Get("content")
-	file, header, err := req.FormFile("file")
-	if err != nil && !errors.Is(err, http.ErrMissingFile) {
-		log.Warn("Error retrieving the file: ", err)
-		return "", nil, nil, err
-	}
-
-	if file != nil {
-		defer file.Close()
-	}
-
-	if file == nil && len(content) == 0 {
-		log.Info("Empty form content, redirecting to index")
-		p.redirectToURL(w, req, "/")
-		return "", nil, nil, ErrEmptyFormContent
-	}
-
-	return content, file, header, nil
-}
-
-// redirectToURL redirects the user to the specified URL.
-func (p *PasteHandler) redirectToURL(w http.ResponseWriter, req *http.Request, urlStr string) {
-	log.Infof("Redirecting to: %s", urlStr)
-	http.Redirect(w, req, urlStr, http.StatusFound)
-}
-
-// RespondWithError sends an HTML error response with the given status code and message.
-func (p *PasteHandler) RespondWithError(w http.ResponseWriter, statusCode int, message string, config *Config) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(statusCode)
-
-	data := ErrorData{
-		StatusCode: statusCode,
-		Message:    message,
-		LogoURL:    config.LogoURL,
-		IndexURL:   config.IndexURL,
-		FaviconURL: config.FaviconURL,
-	}
-
-	html, err := renderPageWithData(string(errorHTML), data)
-	if err != nil {
-		log.Errorf("Error rendering error page: %v", err)
-		_, err = w.Write([]byte("<h1>Internal Server Error</h1>"))
-		if err != nil {
-			log.Errorf("Failed to write error message: %v", err)
-		}
+	if err := p.Upload(keyHTML, html, contentTypeHTML); err != nil {
+		RespondServerInternalError(w, err)
 		return
 	}
 
