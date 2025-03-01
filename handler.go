@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"mime/multipart"
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -36,95 +37,42 @@ type PasteHandler struct {
 	Config             *Config
 }
 
-// PasteObject represents a single uploaded object data
-type PasteObject struct {
-	HtmlKey   string `json:"htmlKey"`
-	RawKey    string `json:"rawKey"`
-	DeleteKey string `json:"deleteKey"`
-}
-
-// PasteData represents the data stored in cookies about uploaded pastes
-type PasteData struct {
-	Objects    []PasteObject `json:"objects"` // Array of uploaded objects
-	CreateTime time.Time     `json:"create_time"`
-}
-
-// SetCommonHeaders sets common headers for the response.
-func SetCommonHeaders(w http.ResponseWriter, contentType string) {
-	w.Header().Set("Content-Type", contentType)
-}
-
-// setCookies adds a cookie with base64-encoded JSON data
-func (p *PasteHandler) setCookies(w http.ResponseWriter, keyRaw, keyHtml, keyDelete string) {
-	// Create data structure for the cookie
-	pasteData := PasteData{
-		Objects: []PasteObject{
-			{
-				HtmlKey:   keyHtml,
-				RawKey:    keyRaw,
-				DeleteKey: keyDelete,
-			},
-		},
-		CreateTime: time.Now().UTC(),
-	}
-
-	// Serialize to JSON
-	jsonData, err := json.Marshal(pasteData)
-	if err != nil {
-		log.Error("Failed to serialize paste data:", err)
-		return
-	}
-
-	// Encode JSON to base64
-	encodedData := base64.StdEncoding.EncodeToString(jsonData)
-
-	// Set cookie with encoded paste data
-	pasteCookie := &http.Cookie{
-		Name:     pasteDataCookieName,
-		Value:    encodedData,
-		Path:     "/",
-		Secure:   true,
-		HttpOnly: false,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   cookieMaxAge,
-	}
-
-	http.SetCookie(w, pasteCookie)
-	log.Debug("Set base64-encoded paste_data cookie")
+// RespondServerInternalError sends a response with status 500 and logs the error.
+func RespondServerInternalError(w http.ResponseWriter, err error) {
+	w.WriteHeader(http.StatusInternalServerError)
+	log.Error(err)
 }
 
 // ServeHTTP handles HTTP requests using different log levels.
 func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	log.Info("Received request: ", req.Method, " ", req.URL.Path)
+	log.Debug("Received request: ", req.Method, " ", req.URL.Path)
 
-	switch req.Method {
-	case http.MethodGet:
-		p.handleGetRequest(w)
-	case http.MethodPost:
-		p.handlePostRequest(w, req)
-	case http.MethodDelete:
-		p.handleDeleteRequest(w, req)
-	default:
+	if req.Method == http.MethodGet {
+		log.Info("Sending index page")
+		w.Header().Set("Content-Type", contentTypeHTML)
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(p.IndexHTML); err != nil {
+			log.Error("Error sending indexHTML: ", err)
+		}
+		return
+	}
+
+	if req.Method != http.MethodPost {
 		log.Warn("Unsupported request method: ", req.Method)
-		p.RespondWithError(w, http.StatusBadRequest, "Unsupported method", p.Config)
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
-}
 
-// handleGetRequest handles GET requests by sending the index page
-func (p *PasteHandler) handleGetRequest(w http.ResponseWriter) {
-	log.Info("Sending index page")
-	SetCommonHeaders(w, contentTypeHTML)
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(p.IndexHTML); err != nil {
-		log.Error("Error sending indexHTML: ", err)
-	}
-}
-
-// handlePostRequest handles POST requests for uploading content
-func (p *PasteHandler) handlePostRequest(w http.ResponseWriter, req *http.Request) {
 	if err := req.ParseMultipartForm(p.MultipartMaxMemory); err != nil {
 		log.Warn("Error parsing form: ", err)
-		p.RespondWithError(w, http.StatusBadRequest, "Invalid form", p.Config)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	content := req.Form.Get("content")
+	if len(content) == 0 {
+		log.Warn("Empty form content")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -312,7 +260,7 @@ func (p *PasteHandler) processTextUpload(req *http.Request, content, keyRaw, url
 	urlRaw := p.ResultURLPrefix + keyRaw
 
 	builder := strings.Builder{}
-	// todo: better templating
+	// todo: use a better templating approach
 	builder.Write(p.OutputHTMLPre)
 	builder.Write([]byte(fmt.Sprintf("<div class=\"nav\"><a href=\"%s\">raw</a></div>", urlRaw)))
 
@@ -326,14 +274,15 @@ func (p *PasteHandler) processTextUpload(req *http.Request, content, keyRaw, url
 		RespondServerInternalError(w, err)
 		return
 	}
+	log.Debug("Uploaded raw content with key: ", keyRaw)
 
 	if err := p.Upload(keyHTML, html, contentTypeHTML); err != nil {
 		RespondServerInternalError(w, err)
 		return
 	}
+	log.Info("Uploaded HTML content with key: ", keyHTML)
 
-	_, err = w.Write(html)
-	if err != nil {
-		log.Errorf("Error writing error response: %v", err)
-	}
+	w.Header().Set("Location", urlHTML)
+	w.WriteHeader(http.StatusFound)
+	log.Debug("Redirecting to URL: ", urlHTML)
 }
