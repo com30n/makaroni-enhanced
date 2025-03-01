@@ -10,14 +10,11 @@ all: build docker-build helm-build
 
 # Build the application
 build:
-	go build -o bin/makaroni cmd/makaroni/main.go
+	go build -o bin/makaroni .
 
 # Run the application with air for development
 dev:
-	# make dirs for minio if they not exist
-	if [ ! -d data ]; then mkdir -p dev/s3/data; fi
-	docker-compose up &
-	air .
+	air
 
 # Build the Docker image
 docker-build:
