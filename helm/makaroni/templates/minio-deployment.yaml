@@ -1,0 +1,26 @@
+{{- if .Values.minio.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "makaroni.fullname" . }}-minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "makaroni.name" . }}-minio
+  template:
+    metadata:
+      labels:
+        app: {{ include "makaroni.name" . }}-minio
+    spec:
+      containers:
+        - name: minio
+          image: "{{ .Values.minio.image }}:{{ .Values.minio.tag }}"
+          env:
+            - name: MINIO_ROOT_USER
+              value: {{ .Values.minio.rootUser | quote }}
+            - name: MINIO_ROOT_PASSWORD
+              value: {{ .Values.minio.rootPassword | quote }}
+          ports:
+            - containerPort: {{ .Values.minio.servicePort }}
+{{- end }}
