@@ -1,0 +1,13 @@
+{{- if .Values.minio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "makaroni.fullname" . }}-minio
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.minio.servicePort }}
+      targetPort: {{ .Values.minio.servicePort }}
+  selector:
+    app: {{ include "makaroni.name" . }}-minio
+{{- end }}

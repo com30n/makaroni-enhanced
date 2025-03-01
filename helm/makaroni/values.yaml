@@ -1,0 +1,30 @@
+replicaCount: 1
+image:
+  repository: "ghcr.io/myuser/makaroni"
+  tag: "latest"
+service:
+  type: ClusterIP
+  port: 80
+
+config:
+  address: ":8080"
+  multipartMaxMemory: "1048576"
+  indexUrl: "https://example.com"
+  resultUrlPrefix: "https://example.com/paste/"
+  logoUrl: "https://example.com/logo.png"
+  faviconUrl: "https://example.com/favicon.ico"
+  style: "default"
+  s3Endpoint: "makaroni-minio:9000"
+  s3Region: "us-east-1"
+  s3Bucket: "my-bucket"
+  s3KeyId: "abc123"
+  s3SecretKey: "secret"
+
+minio:
+  enabled: true
+  image: "bitnami/minio"
+  tag: "latest"
+  servicePort: 9000
+  rootUser: "minioadmin"
+  rootPassword: "minioadmin"
+
