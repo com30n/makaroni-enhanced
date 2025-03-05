@@ -78,13 +78,21 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// todo: use a better templating approach
 	builder.Write(p.OutputHTMLPre)
 	builder.Write([]byte(fmt.Sprintf("<div class=\"nav\"><a href=\"%s\">raw</a></div>", urlRaw)))
-
-	if err := highlight(&builder, content, syntax, p.Style); err != nil {
-		RespondServerInternalError(w, err)
-		return
+	// if contnent longer 100 kilobytes, do not highlight it
+	var html string
+	if len(content) > 1024*100 {
+		log.Debugf("Content size more than 100kb: '%d' bytes, using pre tag", len(content))
+		builder.WriteString("<pre>")
+		builder.WriteString(content)
+		builder.WriteString("</pre>")
+		html = builder.String()
+	} else {
+		if err := highlight(&builder, content, syntax, p.Style); err != nil {
+			RespondServerInternalError(w, err)
+			return
+		}
+		html = builder.String()
 	}
-	html := builder.String()
-
 	if err := p.Upload(keyRaw, content, contentTypeText); err != nil {
 		RespondServerInternalError(w, err)
 		return

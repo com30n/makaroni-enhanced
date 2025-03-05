@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  minio:
+    image: "quay.io/minio/minio:latest"
+    environment:
+      MINIO_ROOT_USER: "minioadmin"
+      MINIO_ROOT_PASSWORD: "minioadmin"
+    entrypoint: [ 'sh', '-c', 'mkdir -p /data/my-bucket && /usr/bin/minio server /data --console-address=:9090 & sleep 1 && mc alias set myminio http://localhost:9000 minioadmin minioadmin && mc anonymous set public myminio/my-bucket; while true; do sleep 1; done' ]
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    volumes:
+      - ./dev/s3/data:/data
+
+volumes:
+  minio-data:
