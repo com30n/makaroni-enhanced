@@ -36,6 +36,13 @@ func initLogger() {
 	log.SetLevel(level)
 }
 
+func logStaticFileRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Debug("Received request: ", r.Method, " ", r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initLogger()
 	log.Debug("Application starting (debug level)")
@@ -64,13 +71,13 @@ func main() {
 	}
 	s3PathStyleAddressing, err := strconv.ParseBool(os.Getenv("MKRN_S3_PATH_STYLE"))
 	if err != nil {
-		log.Error("Error parsing MKRN_S3_PATH_STYLE: ", err)
-		log.Fatal(err)
+		s3PathStyleAddressing = false
+		log.Debug("MKRN_S3_PATH_STYLE not set, defaulting to 'false'")
 	}
 	s3DisableSSL, err := strconv.ParseBool(os.Getenv("MKRN_S3_DISABLE_SSL"))
 	if err != nil {
-		log.Error("Error parsing MKRN_S3_DISABLE_SSL: ", err)
-		log.Fatal(err)
+		s3DisableSSL = false
+		log.Debug("MKRN_S3_DISABLE_SSL not set, defaulting to 'false'")
 	}
 	log.Debugf("Parsed multipartMaxMemory: %d", multipartMaxMemoryEnv)
 	multipartMaxMemory := flag.Int64("multipart-max-memory", multipartMaxMemoryEnv, "Maximum memory for multipart form parser")
@@ -117,7 +124,11 @@ func main() {
 	}
 	log.Debug("Uploader initialized successfully.")
 
+	fileServer := http.FileServer(http.Dir("./resources/static"))
+
 	mux := http.NewServeMux()
+	mux.Handle("/static/", logStaticFileRequest(http.StripPrefix("/static/", fileServer)))
+
 	mux.Handle("/", &makaroni.PasteHandler{
 		IndexHTML:          indexHTML,
 		OutputHTMLPre:      outputPreHTML,
@@ -126,13 +137,14 @@ func main() {
 		Style:              *style,
 		MultipartMaxMemory: *multipartMaxMemory,
 	})
+
 	log.Debug("HTTP multiplexer configured.")
 
 	server := http.Server{
 		Addr:    *address,
 		Handler: mux,
 	}
-	log.Info("Server starting on address ", *address)
+	log.Info("Server starting on address ", server.Addr)
 	if err := server.ListenAndServe(); err != nil {
 		log.Error("Server stopped with error: ", err)
 		log.Fatal(err)
