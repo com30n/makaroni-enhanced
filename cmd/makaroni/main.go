@@ -1,17 +1,46 @@
 package main
 
 import (
-	"flag"
+	"context"
+	"fmt"
 	"net/http"
 	"os"
-	"strconv"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/kaero/makaroni"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
-func maskSecret(secret string) string {
+// Config holds all application configuration
+type Config struct {
+	// Server settings
+	Address            string `mapstructure:"address"`
+	MultipartMaxMemory int64  `mapstructure:"multipart_max_memory"`
+
+	// URLs
+	IndexURL        string `mapstructure:"index_url"`
+	ResultURLPrefix string `mapstructure:"result_url_prefix"`
+	LogoURL         string `mapstructure:"logo_url"`
+	FaviconURL      string `mapstructure:"favicon_url"`
+	Style           string `mapstructure:"style"`
+
+	// S3 settings
+	S3Endpoint   string `mapstructure:"s3_endpoint"`
+	S3Region     string `mapstructure:"s3_region"`
+	S3Bucket     string `mapstructure:"s3_bucket"`
+	S3KeyID      string `mapstructure:"s3_key_id"`
+	S3SecretKey  string `mapstructure:"s3_secret_key"`
+	S3PathStyle  bool   `mapstructure:"s3_path_style"`
+	S3DisableSSL bool   `mapstructure:"s3_disable_ssl"`
+}
+
+// MaskSecret hides part of a secret value for safe logging
+func MaskSecret(secret string) string {
 	if len(secret) <= 6 {
 		if len(secret) <= 2 {
 			return secret
@@ -21,12 +50,35 @@ func maskSecret(secret string) string {
 	return secret[:3] + strings.Repeat("*", len(secret)-6) + secret[len(secret)-3:]
 }
 
-func initLogger() {
-	// Set log format and level
+// LogConfig logs configuration settings while hiding secrets
+func LogConfig() {
+	categories := map[string][]string{
+		"Server": {"address", "multipart_max_memory"},
+		"URL":    {"index_url", "result_url_prefix", "logo_url", "favicon_url", "style"},
+		"S3":     {"s3_endpoint", "s3_region", "s3_bucket", "s3_key_id", "s3_secret_key", "s3_path_style", "s3_disable_ssl"},
+	}
+
+	for category, keys := range categories {
+		log.Debugf("%s settings:", category)
+		for _, key := range keys {
+			value := viper.Get(key)
+			if key == "s3_secret_key" && value != nil {
+				valueStr, ok := value.(string)
+				if ok && valueStr != "" {
+					log.Debugf("  MKRN_%s: %s", strings.ToUpper(key), MaskSecret(valueStr))
+					continue
+				}
+			}
+			log.Debugf("  MKRN_%s: %v", strings.ToUpper(key), value)
+		}
+	}
+}
+
+func InitLogger() {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
 	})
-	// Set logging level (adjust as needed, or load from env/config)
+
 	logLevel := os.Getenv("LOG_LEVEL")
 	level, err := log.ParseLevel(logLevel)
 	if err != nil {
@@ -36,117 +88,143 @@ func initLogger() {
 	log.SetLevel(level)
 }
 
-func logStaticFileRequest(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Debug("Received request: ", r.Method, " ", r.URL.Path)
-		next.ServeHTTP(w, r)
-	})
-}
-
 func main() {
-	initLogger()
+	var config Config
+	var rootCmd = &cobra.Command{
+		Use:   "makaroni",
+		Short: "Makaroni is a paste service",
+		Long:  "A web service for sharing code snippets with syntax highlighting",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := viper.Unmarshal(&config); err != nil {
+				log.Fatalf("Error parsing configuration: %v", err)
+			}
+
+			LogConfig()
+
+			server, err := SetupServer(&config)
+			if err != nil {
+				log.Fatalf("Error setting up server: %v", err)
+			}
+
+			// Start server in a goroutine
+			go func() {
+				log.Infof("Server started on address %s", server.Addr)
+				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Fatalf("Server error: %v", err)
+				}
+			}()
+
+			// Setup graceful shutdown
+			stop := make(chan os.Signal, 1)
+			signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+			<-stop
+
+			log.Info("Shutdown signal received, stopping server...")
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			if err := server.Shutdown(ctx); err != nil {
+				log.Errorf("Server shutdown error: %v", err)
+			}
+
+			log.Info("Server stopped successfully")
+		},
+	}
+
+	// Initialize configuration
+	InitLogger()
 	log.Debug("Application starting (debug level)")
 
-	// Debug: output environment variable values, masking secrets
-	log.Debugf("MKRN_ADDRESS: %s", os.Getenv("MKRN_ADDRESS"))
-	log.Debugf("MKRN_MULTIPART_MAX_MEMORY: %s", os.Getenv("MKRN_MULTIPART_MAX_MEMORY"))
-	log.Debugf("MKRN_INDEX_URL: %s", os.Getenv("MKRN_INDEX_URL"))
-	log.Debugf("MKRN_RESULT_URL_PREFIX: %s", os.Getenv("MKRN_RESULT_URL_PREFIX"))
-	log.Debugf("MKRN_LOGO_URL: %s", os.Getenv("MKRN_LOGO_URL"))
-	log.Debugf("MKRN_FAVICON_URL: %s", os.Getenv("MKRN_FAVICON_URL"))
-	log.Debugf("MKRN_STYLE: %s", os.Getenv("MKRN_STYLE"))
-	log.Debugf("MKRN_S3_ENDPOINT: %s", os.Getenv("MKRN_S3_ENDPOINT"))
-	log.Debugf("MKRN_S3_REGION: %s", os.Getenv("MKRN_S3_REGION"))
-	log.Debugf("MKRN_S3_BUCKET: %s", os.Getenv("MKRN_S3_BUCKET"))
-	log.Debugf("MKRN_S3_KEY_ID: %s", os.Getenv("MKRN_S3_KEY_ID"))
-	log.Debugf("MKRN_S3_SECRET_KEY: %s", maskSecret(os.Getenv("MKRN_S3_SECRET_KEY")))
-	log.Debugf("MKRN_S3_PATH_STYLE: %t", os.Getenv("MKRN_S3_PATH_STYLE"))
-	log.Debugf("MKRN_S3_DISABLE_SSL: %t", os.Getenv("MKRN_S3_DISABLE_SSL"))
+	// Setup Viper for environment variables
+	viper.SetEnvPrefix("MKRN")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
 
-	address := flag.String("address", os.Getenv("MKRN_ADDRESS"), "Address to serve")
-	multipartMaxMemoryEnv, err := strconv.ParseInt(os.Getenv("MKRN_MULTIPART_MAX_MEMORY"), 0, 64)
-	if err != nil {
-		log.Error("Error parsing MKRN_MULTIPART_MAX_MEMORY: ", err)
-		log.Fatal(err)
-	}
-	s3PathStyleAddressing, err := strconv.ParseBool(os.Getenv("MKRN_S3_PATH_STYLE"))
-	if err != nil {
-		s3PathStyleAddressing = false
-		log.Debug("MKRN_S3_PATH_STYLE not set, defaulting to 'false'")
-	}
-	s3DisableSSL, err := strconv.ParseBool(os.Getenv("MKRN_S3_DISABLE_SSL"))
-	if err != nil {
-		s3DisableSSL = false
-		log.Debug("MKRN_S3_DISABLE_SSL not set, defaulting to 'false'")
-	}
-	log.Debugf("Parsed multipartMaxMemory: %d", multipartMaxMemoryEnv)
-	multipartMaxMemory := flag.Int64("multipart-max-memory", multipartMaxMemoryEnv, "Maximum memory for multipart form parser")
-	indexURL := flag.String("index-url", os.Getenv("MKRN_INDEX_URL"), "URL to the index page")
-	resultURLPrefix := flag.String("result-url-prefix", os.Getenv("MKRN_RESULT_URL_PREFIX"), "Upload result URL prefix.")
-	logoURL := flag.String("logo-url", os.Getenv("MKRN_LOGO_URL"), "Logo URL for the form page")
-	faviconURL := flag.String("favicon-url", os.Getenv("MKRN_FAVICON_URL"), "Favicon URL")
-	style := flag.String("style", os.Getenv("MKRN_STYLE"), "Formatting style")
-	s3Endpoint := flag.String("s3-endpoint", os.Getenv("MKRN_S3_ENDPOINT"), "S3 endpoint")
-	s3Region := flag.String("s3-region", os.Getenv("MKRN_S3_REGION"), "S3 region")
-	s3Bucket := flag.String("s3-bucket", os.Getenv("MKRN_S3_BUCKET"), "S3 bucket")
-	s3KeyID := flag.String("s3-key-id", os.Getenv("MKRN_S3_KEY_ID"), "S3 key ID")
-	s3SecretKey := flag.String("s3-secret-key", os.Getenv("MKRN_S3_SECRET_KEY"), "S3 secret key")
-	help := flag.Bool("help", false, "Print usage")
-	flag.Parse()
-	log.Debug("Flags parsed successfully.")
+	// Define flags
+	flags := rootCmd.Flags()
+	flags.String("address", "", "Address to serve")
+	flags.Int64("multipart-max-memory", 0, "Maximum memory for multipart forms")
+	flags.String("index-url", "", "URL to the index page")
+	flags.String("result-url-prefix", "", "Upload result URL prefix")
+	flags.String("logo-url", "", "Logo URL for the form page")
+	flags.String("favicon-url", "", "Favicon URL")
+	flags.String("style", "", "Formatting style")
+	flags.String("s3-endpoint", "", "S3 endpoint")
+	flags.String("s3-region", "", "S3 region")
+	flags.String("s3-bucket", "", "S3 bucket")
+	flags.String("s3-key-id", "", "S3 key ID")
+	flags.String("s3-secret-key", "", "S3 secret key")
+	flags.Bool("s3-path-style", false, "S3 use path style addressing")
+	flags.Bool("s3-disable-ssl", false, "S3 disable SSL")
 
-	if *help {
-		flag.Usage()
-		os.Exit(0)
+	// Bind flags with viper
+	if err := viper.BindPFlags(flags); err != nil {
+		log.Fatalf("Error binding flags: %v", err)
 	}
 
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+// SetupServer creates and configures HTTP server
+func SetupServer(config *Config) (*http.Server, error) {
+	// Render HTML templates
 	log.Info("Rendering index page")
-	indexHTML, err := makaroni.RenderIndexPage(*logoURL, *indexURL, *faviconURL)
+	indexHTML, err := makaroni.RenderIndexPage(config.LogoURL, config.IndexURL, config.FaviconURL)
 	if err != nil {
-		log.Error("Error rendering index page: ", err)
-		log.Fatal(err)
+		return nil, err
 	}
-	log.Debug("Index page rendered successfully.")
 
 	log.Info("Rendering output pre HTML")
-	outputPreHTML, err := makaroni.RenderOutputPre(*logoURL, *indexURL, *faviconURL)
+	outputPreHTML, err := makaroni.RenderOutputPre(config.LogoURL, config.IndexURL, config.FaviconURL)
 	if err != nil {
-		log.Error("Error rendering output pre HTML: ", err)
-		log.Fatal(err)
+		return nil, err
 	}
-	log.Debug("Output pre HTML rendered successfully.")
 
+	// Initialize S3 uploader
 	log.Info("Initializing uploader")
-	uploadFunc, err := makaroni.NewUploader(*s3Endpoint, s3DisableSSL, s3PathStyleAddressing, *s3Region, *s3Bucket, *s3KeyID, *s3SecretKey)
+	uploadFunc, err := makaroni.NewUploader(
+		config.S3Endpoint,
+		config.S3DisableSSL,
+		config.S3PathStyle,
+		config.S3Region,
+		config.S3Bucket,
+		config.S3KeyID,
+		config.S3SecretKey,
+	)
 	if err != nil {
-		log.Error("Error initializing uploader: ", err)
-		log.Fatal(err)
+		return nil, err
 	}
-	log.Debug("Uploader initialized successfully.")
 
+	// Setup routing
 	fileServer := http.FileServer(http.Dir("./resources/static"))
-
 	mux := http.NewServeMux()
-	mux.Handle("/static/", logStaticFileRequest(http.StripPrefix("/static/", fileServer)))
 
+	// Handle static files
+	mux.Handle("/static/", LogStaticFileRequest(http.StripPrefix("/static/", fileServer)))
+
+	// Main handler
 	mux.Handle("/", &makaroni.PasteHandler{
 		IndexHTML:          indexHTML,
 		OutputHTMLPre:      outputPreHTML,
 		Upload:             uploadFunc,
-		ResultURLPrefix:    *resultURLPrefix,
-		Style:              *style,
-		MultipartMaxMemory: *multipartMaxMemory,
+		ResultURLPrefix:    config.ResultURLPrefix,
+		Style:              config.Style,
+		MultipartMaxMemory: config.MultipartMaxMemory,
 	})
 
-	log.Debug("HTTP multiplexer configured.")
-
-	server := http.Server{
-		Addr:    *address,
+	return &http.Server{
+		Addr:    config.Address,
 		Handler: mux,
-	}
-	log.Info("Server starting on address ", server.Addr)
-	if err := server.ListenAndServe(); err != nil {
-		log.Error("Server stopped with error: ", err)
-		log.Fatal(err)
-	}
+	}, nil
+}
+
+// LogStaticFileRequest middleware for logging requests to static files
+func LogStaticFileRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Debug("Received request: ", r.Method, " ", r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
 }
