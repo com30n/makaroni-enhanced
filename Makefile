@@ -14,7 +14,8 @@ build:
 
 # Run the application with air for development
 dev:
-	air
+	docker-compose up &
+	air .
 
 # Build the Docker image
 docker-build:
