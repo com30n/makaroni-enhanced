@@ -1,60 +1,157 @@
 <!DOCTYPE html>
-<meta charset="utf-8">
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Makaroni</title>
     <link rel="icon" href="{{.FaviconURL}}">
+    <style>
+        :root {
+            --primary-color: #4a86e8;
+            --hover-color: #3d7bd9;
+            --focus-outline: rgba(74, 134, 232, 0.3);
+            --padding-base: 8px;
+        }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.5;
+            color: #333;
+        }
+        input, select, textarea {
+            font-family: inherit;
+            font-size: 100%;
+            line-height: 1.15;
+            margin: 0;
+            padding: var(--padding-base);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px var(--focus-outline);
+        }
+        .content {
+            margin: 0 auto;
+            max-width: min(100% - 32px, 1296px);
+            padding: 0 16px;
+            font: 16px sans-serif;
+        }
+        .header {
+            padding: 20px 0;
+            display: flex;
+            align-items: center;
+        }
+        .header img {
+            max-height: 40px;
+        }
+        .row {
+            padding-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        textarea {
+            display: block;
+            width: 100%;
+            min-height: 200px;
+            height: max(300px, 100vh - 300px);
+            box-sizing: border-box;
+            font-family: monospace;
+            resize: vertical;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover {
+            background-color: var(--hover-color);
+        }
+        .form-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .hint {
+            color: #666;
+            font-size: 0.9em;
+        }
+        @media (max-width: 600px) {
+            .form-actions {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
 </head>
-<style>
-body { margin: 0; }
-input, select, textarea {
-    font-family: inherit;
-    font-size: 100%;
-    line-height: 1.15;
-    margin: 0;
-    text-transform: none;
-}
-.content {
-    margin: 0 auto;
-    max-width: min(100% - 32px,1296px);
-    font: 16px sans-serif;
-}
-.header {
-    padding: 20px 0;
-}
-.row {
-    padding-bottom: 20px;
-}
-textarea {
-    display: block;
-    min-width: 100%;
-    min-height: 200px;
-    height: max(300px, 100vh - 300px);
-}
-</style>
 <body>
 <div class="content">
-    <div class="header"><a href="{{.IndexURL}}"><img src="{{.LogoURL}}" alt="logo"></a></div>
-    <form action="/" method="post" enctype="multipart/form-data">
-        <div class="row">
-            <label for="content">Content</label>
-            <textarea name="content" id="content" autofocus></textarea>
-        </div>
-        <div class="row">
-            <input type="submit" value="Paste!"/> or press ctrl+enter
-            <label for="syntax" style="margin-left: 20px">Syntax</label>
-            <select name="syntax" id="syntax">
-                <option value="auto">autodetect</option>
-                <option value="plain">plain text</option>
-                {{range .LangList}}
-                    <option value="{{.}}">{{.}}</option>
-                {{end}}
-            </select>
-        </div>
-    </form>
+    <header class="header">
+        <a href="{{.IndexURL}}"><img src="{{.LogoURL}}" alt="Makaroni Logo"></a>
+    </header>
+    <main>
+        <form action="/" method="post" enctype="multipart/form-data" id="pasteForm">
+            <div class="row">
+                <label for="content">Content</label>
+                <textarea name="content" id="content" autofocus
+                          placeholder="Paste or type your code here..."></textarea>
+            </div>
+            <div class="form-actions">
+                <div>
+                    <button type="submit">Paste!</button>
+                    <span class="hint">or press Ctrl+Enter</span>
+                </div>
+                <div>
+                    <label for="syntax">Syntax</label>
+                    <select name="syntax" id="syntax">
+                        <option value="auto">autodetect</option>
+                        <option value="plain">plain text</option>
+                        {{range .LangList}}
+                            <option value="{{.}}">{{.}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+        </form>
+    </main>
 </div>
 <script>
-    document.querySelector('body').addEventListener("keydown", function (e) {
-        if (e.keyCode == 13 && e.ctrlKey) { document.querySelector('form').submit() }
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('pasteForm');
+        const textarea = document.getElementById('content');
+
+        // Handle Ctrl+Enter submission
+        document.querySelector('body').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                form.submit();
+            }
+        });
+
+        // Save draft to localStorage
+        textarea.addEventListener('input', function() {
+            localStorage.setItem('makaroniDraft', this.value);
+        });
+
+        // Restore draft if exists
+        const savedDraft = localStorage.getItem('makaroniDraft');
+        if (savedDraft) {
+            textarea.value = savedDraft;
+        }
+
+        // Clear draft on submission
+        form.addEventListener('submit', function() {
+            localStorage.removeItem('makaroniDraft');
+        });
     });
 </script>
 </body>
+</html>
