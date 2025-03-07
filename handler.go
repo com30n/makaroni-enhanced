@@ -28,7 +28,7 @@ func RespondServerInternalError(w http.ResponseWriter, err error) {
 
 // ServeHTTP handles HTTP requests using different log levels.
 func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	log.Debug("Received request: ", req.Method, " ", req.URL.Path)
+	log.Info("Received request: ", req.Method, " ", req.URL.Path)
 
 	if req.Method == http.MethodGet {
 		log.Info("Sending index page")
@@ -63,9 +63,11 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if len(syntax) == 0 {
 		syntax = "plaintext"
 	}
+	log.Debug("Using syntax: ", syntax)
 
 	uuidV4, err := uuid.NewRandom()
 	if err != nil {
+		log.Error("Error generating UUID: ", err)
 		RespondServerInternalError(w, err)
 		return
 	}
@@ -87,19 +89,23 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		builder.WriteString("</pre>")
 		html = builder.String()
 	} else {
+		log.Debugf("Content size: '%d' bytes, highlighting it", len(content))
 		if err := highlight(&builder, content, syntax, p.Style); err != nil {
+			log.Error("Error highlighting content: ", err)
 			RespondServerInternalError(w, err)
 			return
 		}
 		html = builder.String()
 	}
 	if err := p.Upload(keyRaw, content, contentTypeText); err != nil {
+		log.Error("Error uploading raw content: ", err)
 		RespondServerInternalError(w, err)
 		return
 	}
-	log.Debug("Uploaded raw content with key: ", keyRaw)
+	log.Info("Uploaded raw content with key: ", keyRaw)
 
 	if err := p.Upload(keyHTML, html, contentTypeHTML); err != nil {
+		log.Error("Error uploading HTML content: ", err)
 		RespondServerInternalError(w, err)
 		return
 	}
