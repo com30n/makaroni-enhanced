@@ -5,7 +5,7 @@ tmp_dir = "tmp"
 [build]
 cmd = "go build -o bin/makaroni ./cmd/makaroni/main.go"
 bin = "bin/makaroni"
-full_bin = "LOG_LEVEL=debug MKRN_ADDRESS=:8080 MKRN_MULTIPART_MAX_MEMORY=1048576 MKRN_INDEX_URL=http://localhost MKRN_RESULT_URL_PREFIX=http://localhost:9000/my-bucket/ MKRN_LOGO_URL=http://localhost:8080/static/logo.png MKRN_FAVICON_URL=http://localhost:8080/static/favicon.ico MKRN_STYLE=github MKRN_S3_ENDPOINT=localhost:9000 MKRN_S3_REGION=us-east-1 MKRN_S3_BUCKET=my-bucket MKRN_S3_KEY_ID=minioadmin MKRN_S3_SECRET_KEY=minioadmin MKRN_S3_PATH_STYLE=true MKRN_S3_DISABLE_SSL=true ./bin/makaroni"
+full_bin = "LOG_LEVEL=debug MKRN_ADDRESS=:8080 MKRN_MULTIPART_MAX_MEMORY=1048576 MKRN_INDEX_URL=http://localhost:8080 MKRN_RESULT_URL_PREFIX=http://localhost:9000/my-bucket/ MKRN_LOGO_URL=http://localhost:8080/static/logo.png MKRN_FAVICON_URL=http://localhost:8080/static/favicon.ico MKRN_STYLE=github MKRN_S3_ENDPOINT=localhost:9000 MKRN_S3_REGION=us-east-1 MKRN_S3_BUCKET=my-bucket MKRN_S3_KEY_ID=minioadmin MKRN_S3_SECRET_KEY=minioadmin MKRN_S3_PATH_STYLE=true MKRN_S3_DISABLE_SSL=true ./bin/makaroni"
 include_ext = ["go", "tpl", "tmpl", "gohtml"]
 exclude_dir = ["vendor", "tmp", "bin", "helm"]
 send_interrupt = true

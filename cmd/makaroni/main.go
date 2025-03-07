@@ -199,6 +199,7 @@ func SetupServer(config *Config) (*http.Server, error) {
 	log.Info("Rendering output pre HTML")
 	outputPreHTML, err := makaroni.RenderOutputPre(config.LogoURL, config.IndexURL, config.FaviconURL)
 	if err != nil {
+		log.Warnf("Error rendering output pre HTML: %v", err)
 		return nil, err
 	}
 
