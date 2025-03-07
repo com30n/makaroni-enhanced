@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,21 @@ type Config struct {
 	S3SecretKey  string `mapstructure:"s3_secret_key"`
 	S3PathStyle  bool   `mapstructure:"s3_path_style"`
 	S3DisableSSL bool   `mapstructure:"s3_disable_ssl"`
+}
+
+// Bind environment variables automatically
+func bindEnvVars(config Config) {
+	t := reflect.TypeOf(config)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		envKey := field.Tag.Get("mapstructure")
+		if envKey != "" {
+			err := viper.BindEnv(envKey)
+			if err != nil {
+				log.Errorf("Error binding environment variable %s: %v", envKey, err)
+			}
+		}
+	}
 }
 
 // MaskSecret hides part of a secret value for safe logging
@@ -135,11 +151,6 @@ func main() {
 	InitLogger()
 	log.Debug("Application starting (debug level)")
 
-	// Setup Viper for environment variables
-	viper.SetEnvPrefix("MKRN")
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	viper.AutomaticEnv()
-
 	// Define flags
 	flags := rootCmd.Flags()
 	flags.String("address", "", "Address to serve")
@@ -161,6 +172,14 @@ func main() {
 	if err := viper.BindPFlags(flags); err != nil {
 		log.Fatalf("Error binding flags: %v", err)
 	}
+
+	// Setup Viper for environment variables
+	viper.SetEnvPrefix("MKRN")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+
+	// Bind environment variables automatically
+	bindEnvVars(config)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
