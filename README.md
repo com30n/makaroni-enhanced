@@ -6,9 +6,16 @@ This document outlines the steps to launch a local kind cluster using Helm, with
 
 - [brew](https://brew.sh/)
 - Go (recommended version 1.18+)
-- Helm
+- Helm (for kind environment)
+- Docker compose (for local dev environment)
 
 ## Installation Steps
+
+### Docker Compose
+
+1. Just run `make dev`
+
+### Kind
 
 1. **Install kind**  
    ```
