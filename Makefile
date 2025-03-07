@@ -14,6 +14,8 @@ build:
 
 # Run the application with air for development
 dev:
+	# make dirs for minio if they not exist
+	if [ ! -d data ]; then mkdir -p dev/s3/data; fi
 	docker-compose up &
 	air .
 
