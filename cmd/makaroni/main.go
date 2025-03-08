@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -125,7 +126,7 @@ func main() {
 			// Start server in a goroutine
 			go func() {
 				log.Infof("Server started on address %s", server.Addr)
-				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					log.Fatalf("Server error: %v", err)
 				}
 			}()
