@@ -124,15 +124,23 @@ func SetupServer(config *makaroni.Config) (*http.Server, error) {
 
 	// Initialize S3 uploader
 	log.Info("Initializing uploader")
-	uploadFunc, err := makaroni.NewUploader(
-		config.S3Endpoint,
-		config.S3DisableSSL,
-		config.S3PathStyle,
-		config.S3Region,
-		config.S3Bucket,
-		config.S3KeyID,
-		config.S3SecretKey,
-	)
+
+	uploaderConfig := makaroni.UploaderConfig{
+		Endpoint:            config.S3Endpoint,
+		DisableSSL:          config.S3DisableSSL,
+		PathStyleAddressing: config.S3PathStyle,
+		Region:              config.S3Region,
+		Bucket:              config.S3Bucket,
+		KeyID:               config.S3KeyID,
+		Secret:              config.S3SecretKey,
+		// TODO: move to config
+		// Additional settings
+		Timeout:     30 * time.Second,
+		PartSize:    5 * 1024 * 1024, // 5MB parts for multipart uploads
+		Concurrency: 5,               // 5 concurrent uploads
+	}
+
+	uploader, err := makaroni.NewUploader(uploaderConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -147,12 +155,14 @@ func SetupServer(config *makaroni.Config) (*http.Server, error) {
 	// Main handler
 	mux.Handle("/", &makaroni.PasteHandler{
 		IndexHTML:          indexHTML,
-		Upload:             uploadFunc,
+		Uploader:           uploader,
 		ResultURLPrefix:    config.ResultURLPrefix,
 		Style:              config.Style,
 		MultipartMaxMemory: config.MultipartMaxMemory,
 		Config:             config,
 	})
+
+	// TODO: add an error page
 
 	return &http.Server{
 		Addr:    config.Address,

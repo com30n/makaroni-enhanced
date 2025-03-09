@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -17,7 +16,7 @@ var contentTypeText = "text/plain"
 
 type PasteHandler struct {
 	IndexHTML          []byte
-	Upload             func(key string, content string, contentType string) error
+	Uploader           *Uploader
 	Style              string
 	ResultURLPrefix    string
 	MultipartMaxMemory int64
@@ -33,6 +32,8 @@ func RespondServerInternalError(w http.ResponseWriter, err error) {
 // ServeHTTP handles HTTP requests using different log levels.
 func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	log.Info("Received request: ", req.Method, " ", req.URL.Path)
+
+	// TODO: refactor the shi~
 
 	if req.Method == http.MethodGet {
 		log.Info("Sending index page")
@@ -67,7 +68,7 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	keyHtml := keyRaw + ".html"
 
 	var fileExtension string
-	var fileContentType string
+	var contentType string
 
 	content := req.Form.Get("content")
 	file, header, err := req.FormFile("file")
@@ -85,22 +86,10 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			}
 		}(file)
 		fileExtension = filepath.Ext(header.Filename)
-		fileContentType = header.Header.Get("Content-Type")
-
-		log.Debug("Uploaded File: " + header.Filename)
-		log.Debug("File Size: " + fmt.Sprintf("%d", header.Size))
-		log.Debug("MIME Header: " + header.Header.Get("Content-Type"))
-
-		fileContent, err := io.ReadAll(file)
-		if err != nil {
-			log.Error("Error reading file: ", err)
-			RespondServerInternalError(w, err)
-			return
-		}
-		content = string(fileContent)
+		contentType = header.Header.Get("Content-Type")
 	}
 
-	if len(content) == 0 {
+	if file == nil && len(content) == 0 {
 		log.Warn("Empty form content")
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -117,18 +106,21 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	builder := strings.Builder{}
 
 	if len(fileExtension) > 0 {
-		if err := p.Upload(keyRaw, content, fileContentType); err != nil {
+		if err = p.Uploader.UploadReader(req.Context(), keyRaw, file, contentType, nil); err != nil {
 			log.Error("Error uploading file: ", err)
 			RespondServerInternalError(w, err)
 			return
 		}
 		log.Info("Uploaded file with key: ", keyRaw)
+		log.Debug("File Size: " + fmt.Sprintf("%d", header.Size))
+		log.Debug("MIME Header: " + header.Header.Get("Content-Type"))
 		data := FileDownloadData{
 			p.Config.LogoURL,
 			p.Config.IndexURL,
 			p.Config.FaviconURL,
 			header.Filename,
 			urlRaw,
+			CanViewInBrowser(contentType),
 		}
 		downloadHtml, err := RenderFileDownload(data)
 		if err != nil {
@@ -178,19 +170,21 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		builder.Write(preHtmlPage)
 		html = builder.String()
 
-		if err := p.Upload(keyRaw, content, contentTypeText); err != nil {
-			log.Error("Error uploading raw content: ", err)
+		if err = p.Uploader.UploadString(req.Context(), keyRaw, content, contentTypeText, nil); err != nil {
+			log.Error("Error uploading file: ", err)
 			RespondServerInternalError(w, err)
 			return
 		}
+
 		log.Info("Uploaded raw content with key: ", keyRaw)
 
 	}
-	if err := p.Upload(keyHtml, html, contentTypeHTML); err != nil {
-		log.Error("Error uploading HTML content: ", err)
+	if err = p.Uploader.UploadString(req.Context(), keyHtml, html, contentTypeHTML, nil); err != nil {
+		log.Error("Error uploading file: ", err)
 		RespondServerInternalError(w, err)
 		return
 	}
+
 	log.Info("Uploaded HTML content with key: ", keyHtml)
 
 	w.Header().Set("Location", urlHTML)
