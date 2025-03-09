@@ -1,10 +1,14 @@
 package makaroni
 
 import (
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"strings"
 )
 
@@ -13,11 +17,11 @@ var contentTypeText = "text/plain"
 
 type PasteHandler struct {
 	IndexHTML          []byte
-	OutputHTMLPre      []byte
 	Upload             func(key string, content string, contentType string) error
 	Style              string
 	ResultURLPrefix    string
 	MultipartMaxMemory int64
+	Config             *Config
 }
 
 // RespondServerInternalError sends a response with status 500 and logs the error.
@@ -52,64 +56,142 @@ func (p *PasteHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	content := req.Form.Get("content")
-	if len(content) == 0 {
-		log.Warn("Empty form content")
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	syntax := req.Form.Get("syntax")
-	if len(syntax) == 0 {
-		syntax = "plaintext"
-	}
-	log.Debug("Using syntax: ", syntax)
-
 	uuidV4, err := uuid.NewRandom()
 	if err != nil {
 		log.Error("Error generating UUID: ", err)
 		RespondServerInternalError(w, err)
 		return
 	}
-	keyRaw := uuidV4.String()
-	keyHTML := keyRaw + ".html"
-	urlHTML := p.ResultURLPrefix + keyHTML
-	urlRaw := p.ResultURLPrefix + keyRaw
 
-	builder := strings.Builder{}
-	// todo: use a better templating approach
-	builder.Write(p.OutputHTMLPre)
-	builder.Write([]byte(fmt.Sprintf("<div class=\"nav\"><a href=\"%s\">raw</a></div>", urlRaw)))
-	// if contnent longer 100 kilobytes, do not highlight it
-	var html string
-	if len(content) > 1024*100 {
-		log.Debugf("Content size more than 100kb: '%d' bytes, using pre tag", len(content))
-		builder.WriteString("<pre>")
-		builder.WriteString(content)
-		builder.WriteString("</pre>")
-		html = builder.String()
-	} else {
-		log.Debugf("Content size: '%d' bytes, highlighting it", len(content))
-		if err := highlight(&builder, content, syntax, p.Style); err != nil {
-			log.Error("Error highlighting content: ", err)
+	keyRaw := uuidV4.String()
+	keyHtml := keyRaw + ".html"
+
+	var fileExtension string
+	var fileContentType string
+
+	content := req.Form.Get("content")
+	file, header, err := req.FormFile("file")
+	if err != nil && !errors.Is(err, http.ErrMissingFile) {
+		log.Warn("Error retrieving the file: ", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if file != nil {
+		defer func(file multipart.File) {
+			err := file.Close()
+			if err != nil {
+				log.Error("Error closing file: ", err)
+			}
+		}(file)
+		fileExtension = filepath.Ext(header.Filename)
+		fileContentType = header.Header.Get("Content-Type")
+
+		log.Debug("Uploaded File: " + header.Filename)
+		log.Debug("File Size: " + fmt.Sprintf("%d", header.Size))
+		log.Debug("MIME Header: " + header.Header.Get("Content-Type"))
+
+		fileContent, err := io.ReadAll(file)
+		if err != nil {
+			log.Error("Error reading file: ", err)
 			RespondServerInternalError(w, err)
 			return
 		}
-		html = builder.String()
+		content = string(fileContent)
 	}
-	if err := p.Upload(keyRaw, content, contentTypeText); err != nil {
-		log.Error("Error uploading raw content: ", err)
-		RespondServerInternalError(w, err)
+
+	if len(content) == 0 {
+		log.Warn("Empty form content")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	log.Info("Uploaded raw content with key: ", keyRaw)
 
-	if err := p.Upload(keyHTML, html, contentTypeHTML); err != nil {
+	if len(fileExtension) > 0 {
+		keyRaw = keyRaw + fileExtension
+	}
+
+	urlHTML := p.ResultURLPrefix + keyHtml
+	urlRaw := p.ResultURLPrefix + keyRaw
+
+	var html string
+	builder := strings.Builder{}
+
+	if len(fileExtension) > 0 {
+		if err := p.Upload(keyRaw, content, fileContentType); err != nil {
+			log.Error("Error uploading file: ", err)
+			RespondServerInternalError(w, err)
+			return
+		}
+		log.Info("Uploaded file with key: ", keyRaw)
+		data := FileDownloadData{
+			p.Config.LogoURL,
+			p.Config.IndexURL,
+			p.Config.FaviconURL,
+			header.Filename,
+			urlRaw,
+		}
+		downloadHtml, err := RenderFileDownload(data)
+		if err != nil {
+			log.Error("Error rendering file download HTML: ", err)
+			RespondServerInternalError(w, err)
+			return
+		}
+
+		builder.Write(downloadHtml)
+		html = builder.String()
+	} else {
+		syntax := req.Form.Get("syntax")
+		if len(syntax) == 0 {
+			syntax = "plaintext"
+		}
+		log.Debug("Using syntax: ", syntax)
+
+		prePageData := PreData{
+			p.Config.LogoURL,
+			p.Config.IndexURL,
+			p.Config.FaviconURL,
+			"",
+			urlRaw,
+		}
+
+		// if content longer 100 kilobytes, do not highlight it
+		if len(content) > 1024*100 {
+			log.Debugf("Content size more than 100kb: '%d' bytes, using pre tag", len(content))
+			prePageData.Content = content
+		} else {
+			log.Debugf("Content size: '%d' bytes, highlighting it", len(content))
+			highlightBuilder := strings.Builder{}
+			if err := highlight(&highlightBuilder, content, syntax, p.Style); err != nil {
+				log.Error("Error highlighting content: ", err)
+				RespondServerInternalError(w, err)
+				return
+			}
+			prePageData.Content = highlightBuilder.String()
+		}
+
+		preHtmlPage, err := RenderOutputPre(prePageData)
+		if err != nil {
+			log.Error("Error rendering output pre HTML: ", err)
+			RespondServerInternalError(w, err)
+			return
+		}
+		builder.Write(preHtmlPage)
+		html = builder.String()
+
+		if err := p.Upload(keyRaw, content, contentTypeText); err != nil {
+			log.Error("Error uploading raw content: ", err)
+			RespondServerInternalError(w, err)
+			return
+		}
+		log.Info("Uploaded raw content with key: ", keyRaw)
+
+	}
+	if err := p.Upload(keyHtml, html, contentTypeHTML); err != nil {
 		log.Error("Error uploading HTML content: ", err)
 		RespondServerInternalError(w, err)
 		return
 	}
-	log.Info("Uploaded HTML content with key: ", keyHTML)
+	log.Info("Uploaded HTML content with key: ", keyHtml)
 
 	w.Header().Set("Location", urlHTML)
 	w.WriteHeader(http.StatusFound)

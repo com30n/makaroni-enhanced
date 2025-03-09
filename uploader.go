@@ -13,7 +13,7 @@ type UploadFunc func(key string, content string, contentType string) error
 
 // NewUploader creates and returns a new upload function using S3.
 func NewUploader(endpoint string, disableSsl bool, pathStyleAddressing bool, region string, bucket string, keyID string, secret string) (UploadFunc, error) {
-	log.Debug("Creating AWS session")
+	log.Info("Creating AWS session")
 	awsSession, err := session.NewSession(&aws.Config{
 		Credentials:      credentials.NewStaticCredentials(keyID, secret, ""),
 		Endpoint:         &endpoint,
@@ -25,10 +25,10 @@ func NewUploader(endpoint string, disableSsl bool, pathStyleAddressing bool, reg
 		log.Error("Failed to create AWS session: ", err)
 		return nil, err
 	}
-	log.Debug("AWS session created successfully")
+	log.Info("AWS session created successfully")
 
 	uploader := s3manager.NewUploader(awsSession)
-	log.Debug("S3 uploader created successfully")
+	log.Info("S3 uploader created successfully")
 
 	upload := func(key string, content string, contentType string) error {
 		log.Debugf("Starting upload for key: %s", key)

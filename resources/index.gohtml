@@ -1,3 +1,4 @@
+<!-- resources/index.gohtml -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,13 +13,17 @@
             --focus-outline: rgba(74, 134, 232, 0.3);
             --padding-base: 8px;
         }
+
         body {
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.5;
             color: #333;
         }
-        input, select, textarea {
+
+        input,
+        select,
+        textarea {
             font-family: inherit;
             font-size: 100%;
             line-height: 1.15;
@@ -27,33 +32,42 @@
             border: 1px solid #ccc;
             border-radius: 4px;
         }
-        input:focus, select:focus, textarea:focus {
+
+        input:focus,
+        select:focus,
+        textarea:focus {
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 2px var(--focus-outline);
         }
+
         .content {
             margin: 0 auto;
             max-width: min(100% - 32px, 1296px);
             padding: 0 16px;
             font: 16px sans-serif;
         }
+
         .header {
             padding: 20px 0;
             display: flex;
             align-items: center;
         }
+
         .header img {
             max-height: 40px;
         }
+
         .row {
             padding-bottom: 20px;
         }
+
         label {
             display: block;
             margin-bottom: 6px;
             font-weight: 500;
         }
+
         textarea {
             display: block;
             width: 100%;
@@ -63,6 +77,7 @@
             font-family: monospace;
             resize: vertical;
         }
+
         button {
             background-color: var(--primary-color);
             color: white;
@@ -72,19 +87,23 @@
             cursor: pointer;
             font-weight: 500;
         }
+
         button:hover {
             background-color: var(--hover-color);
         }
+
         .form-actions {
             display: flex;
             align-items: center;
             flex-wrap: wrap;
             gap: 16px;
         }
+
         .hint {
             color: #666;
             font-size: 0.9em;
         }
+
         @media (max-width: 600px) {
             .form-actions {
                 flex-direction: column;
@@ -93,6 +112,7 @@
         }
     </style>
 </head>
+
 <body>
 <div class="content">
     <header class="header">
@@ -116,28 +136,32 @@
                         <option value="auto">autodetect</option>
                         <option value="plain">plain text</option>
                         {{range .LangList}}
-                            <option value="{{.}}">{{.}}</option>
                         {{end}}
                     </select>
                 </div>
+                <div class="row">
+                    <label for="file">Upload File</label>
+                    <input type="file" name="file" id="file">
+                </div>
+
             </div>
         </form>
     </main>
 </div>
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         const form = document.getElementById('pasteForm');
         const textarea = document.getElementById('content');
 
         // Handle Ctrl+Enter submission
-        document.querySelector('body').addEventListener('keydown', function(e) {
+        document.querySelector('body').addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 form.submit();
             }
         });
 
         // Save draft to localStorage
-        textarea.addEventListener('input', function() {
+        textarea.addEventListener('input', function () {
             localStorage.setItem('makaroniDraft', this.value);
         });
 
@@ -148,10 +172,11 @@
         }
 
         // Clear draft on submission
-        form.addEventListener('submit', function() {
+        form.addEventListener('submit', function () {
             localStorage.removeItem('makaroniDraft');
         });
     });
 </script>
 </body>
+
 </html>
