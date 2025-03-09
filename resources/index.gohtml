@@ -135,8 +135,9 @@
                     <select name="syntax" id="syntax">
                         <option value="auto">autodetect</option>
                         <option value="plain">plain text</option>
-                        {{range .LangList}}
-                        {{end}}
+                        {{- range .LangList}}
+                            <option value="{{.}}">{{.}}</option>
+                        {{- end}}
                     </select>
                 </div>
                 <div class="row">
