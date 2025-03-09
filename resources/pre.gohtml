@@ -11,12 +11,14 @@
         --focus-outline: rgba(74, 134, 232, 0.3);
         --padding-base: 8px;
     }
+
     body {
         margin: 0;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         line-height: 1.5;
         color: #333;
     }
+
     input, select, textarea {
         font-family: inherit;
         font-size: 100%;
@@ -26,30 +28,36 @@
         border: 1px solid #ccc;
         border-radius: 4px;
     }
+
     input:focus, select:focus, textarea:focus {
         outline: none;
         border-color: var(--primary-color);
         box-shadow: 0 0 0 2px var(--focus-outline);
     }
+
     .content {
         margin: 0 auto;
         max-width: min(100% - 32px, 1296px);
         padding: 0 16px;
         font: 16px sans-serif;
     }
+
     .header {
         padding: 20px 0;
         display: flex;
         align-items: center;
     }
+
     .header img {
         max-height: 40px;
     }
+
     label {
         display: block;
         margin-bottom: 6px;
         font-weight: 500;
     }
+
     textarea {
         display: block;
         width: 100%;
@@ -59,6 +67,7 @@
         font-family: monospace;
         resize: vertical;
     }
+
     button {
         background-color: var(--primary-color);
         color: white;
@@ -68,6 +77,7 @@
         cursor: pointer;
         font-weight: 500;
     }
+
     button:hover {
         background-color: var(--hover-color);
     }
@@ -79,3 +89,11 @@
             <img src="{{.LogoURL}}" alt="logo">
         </a>
     </div>
+    <div class="file-actions">
+        <a href="{{.DownloadURL}}" download="{{.DownloadURL}}">
+            <button type="button">Raw file</button>
+        </a>
+    </div>
+    {{printf "%s" .Content}}
+</div>
+</body>
