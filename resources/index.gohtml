@@ -60,6 +60,20 @@
 
         .row {
             padding-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .row > div {
+            flex: 1;
+        }
+
+
+        .row > textarea {
+            width: 100%;
+            flex-basis: 100%;
         }
 
         label {
@@ -126,23 +140,26 @@
                           placeholder="Paste or type your code here..."></textarea>
             </div>
             <div class="form-actions">
-                <div>
-                    <button type="submit">Paste!</button>
-                    <span class="hint">or press Ctrl+Enter</span>
-                </div>
-                <div>
-                    <label for="syntax">Syntax</label>
-                    <select name="syntax" id="syntax">
-                        <option value="auto">autodetect</option>
-                        <option value="plain">plain text</option>
-                        {{- range .LangList}}
-                            <option value="{{.}}">{{.}}</option>
-                        {{- end}}
-                    </select>
-                </div>
                 <div class="row">
-                    <label for="file">Upload File</label>
-                    <input type="file" name="file" id="file">
+
+                    <div>
+                        <button type="submit">Paste!</button>
+                        <span class="hint">or press Ctrl+Enter</span>
+                    </div>
+                    <div>
+                        <label for="syntax">Syntax</label>
+                        <select name="syntax" id="syntax">
+                            <option value="auto">autodetect</option>
+                            <option value="plain">plain text</option>
+                            {{- range .LangList}}
+                                <option value="{{.}}">{{.}}</option>
+                            {{- end}}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="file">Upload File</label>
+                        <input type="file" name="file" id="file">
+                    </div>
                 </div>
 
             </div>
