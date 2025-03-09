@@ -32,6 +32,7 @@ type FileDownloadData struct {
 	FaviconURL  string
 	FileName    string
 	DownloadURL string
+	CanView     bool
 }
 
 type PreData struct {
@@ -102,6 +103,7 @@ func renderPage(pageTemplate string, logoURL string, indexURL string, faviconURL
 	return resultBytes, nil
 }
 
+// RenderIndexPage renders the index page
 func RenderIndexPage(logoURL string, indexURL string, faviconURL string) ([]byte, error) {
 	log.Info("Rendering index page")
 	result, err := renderPage(string(indexHTML), logoURL, indexURL, faviconURL)
@@ -111,6 +113,7 @@ func RenderIndexPage(logoURL string, indexURL string, faviconURL string) ([]byte
 	return result, err
 }
 
+// RenderOutputPre renders the output HTML with syntax highlighting
 func RenderOutputPre(data PreData) ([]byte, error) {
 	log.Info("Rendering output page template")
 
@@ -121,6 +124,7 @@ func RenderOutputPre(data PreData) ([]byte, error) {
 	return result, err
 }
 
+// RenderFileDownload renders the file download page
 func RenderFileDownload(data FileDownloadData) ([]byte, error) {
 	log.Info("Rendering output pre HTML", data.FileName)
 
@@ -129,4 +133,24 @@ func RenderFileDownload(data FileDownloadData) ([]byte, error) {
 		log.WithField("size", len(result)).Debug("Output pre template successfully rendered")
 	}
 	return result, err
+}
+
+// CanViewInBrowser Check if file can be viewed in browser by MIME type
+func CanViewInBrowser(contentType string) bool {
+	viewableTypes := []string{
+		"image/",
+		"text/",
+		"application/pdf",
+		"video/",
+		"audio/",
+	}
+
+	for _, viewable := range viewableTypes {
+		if strings.HasPrefix(contentType, viewable) {
+			log.Debug("File can be viewed in browser: ", contentType)
+			return true
+		}
+	}
+	log.Debug("File can be viewed in browser: ", contentType)
+	return false
 }
