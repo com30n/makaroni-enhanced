@@ -2,6 +2,8 @@ package makaroni
 
 import (
 	"context"
+	"fmt"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"io"
 	"strings"
 	"time"
@@ -30,6 +32,7 @@ type UploaderConfig struct {
 // Uploader provides methods for uploading data to S3
 type Uploader struct {
 	uploader *s3manager.Uploader
+	s3Client *s3.S3
 	bucket   string
 	config   UploaderConfig
 }
@@ -61,9 +64,13 @@ func NewUploader(config UploaderConfig) (*Uploader, error) {
 	})
 	if err != nil {
 		log.Error("Failed to create AWS session: ", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to create AWS session: %w", err)
 	}
 	log.Info("AWS session created successfully")
+
+	// Create S3 client
+	s3Client := s3.New(awsSession)
+	log.Info("S3 client created successfully")
 
 	uploader := s3manager.NewUploader(awsSession, func(u *s3manager.Uploader) {
 		u.PartSize = config.PartSize
@@ -73,6 +80,7 @@ func NewUploader(config UploaderConfig) (*Uploader, error) {
 
 	return &Uploader{
 		uploader: uploader,
+		s3Client: s3Client,
 		bucket:   config.Bucket,
 		config:   config,
 	}, nil
@@ -107,9 +115,75 @@ func (u *Uploader) UploadReader(ctx context.Context, key string, reader io.Reade
 
 	output, err := u.uploader.UploadWithContext(ctx, input)
 	if err != nil {
-		log.Error("Upload failed for key: ", key, " error: ", err)
-		return err
+		log.Errorf("Upload failed for key: %s, error: %v", key, err)
+		return fmt.Errorf("upload failed for key %s: %w", key, err)
 	}
 	log.Debugf("Upload succeeded for key: %s, location: %s", key, output.Location)
+	return nil
+}
+
+// GetMetadata retrieves metadata for an object
+func (u *Uploader) GetMetadata(ctx context.Context, key string) (map[string]*string, error) {
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(u.bucket),
+		Key:    aws.String(key),
+	}
+
+	result, err := u.s3Client.HeadObjectWithContext(ctx, input)
+	if err != nil {
+		log.Errorf("Error retrieving metadata for key: %s, error: %v", key, err)
+		return nil, fmt.Errorf("error retrieving metadata for key %s: %w", key, err)
+	}
+
+	return result.Metadata, nil
+}
+
+// DeleteObjects removes multiple objects from storage in a single request
+func (u *Uploader) DeleteObjects(ctx context.Context, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	log.Infof("Deleting %d objects in batch", len(keys))
+
+	// Prepare list of objects to delete
+	objects := make([]*s3.ObjectIdentifier, len(keys))
+	for i, key := range keys {
+		objects[i] = &s3.ObjectIdentifier{
+			Key: aws.String(key),
+		}
+	}
+
+	input := &s3.DeleteObjectsInput{
+		Bucket: aws.String(u.bucket),
+		Delete: &s3.Delete{
+			Objects: objects,
+			// Set Quiet to true to return only errors
+			Quiet: aws.Bool(true),
+		},
+	}
+
+	// Perform the batch deletion
+	output, err := u.s3Client.DeleteObjectsWithContext(ctx, input)
+	if err != nil && err.Error() != s3.ErrCodeNoSuchKey {
+		log.Errorf("Error performing batch deletion: %v", err)
+		return fmt.Errorf("error performing batch deletion: %w", err)
+	}
+
+	// Log errors for specific objects if any
+	var outputErrors []*s3.Error
+	if output != nil && len(output.Errors) > 0 {
+		for _, e := range output.Errors {
+			if *e.Message != s3.ErrCodeNoSuchKey {
+				log.Warnf("Failed to delete object %s: %s", *e.Key, *e.Message)
+				outputErrors = append(outputErrors, e)
+			}
+		}
+		if len(outputErrors) > 0 {
+			return fmt.Errorf("failed to delete %d objects", len(output.Errors))
+		}
+	}
+
+	log.Debugf("Successfully deleted %d objects", len(keys))
 	return nil
 }
