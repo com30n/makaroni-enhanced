@@ -2,3 +2,4 @@
 bin
 helm/makaroni/loca-values.yaml
 dev
+.idea!
