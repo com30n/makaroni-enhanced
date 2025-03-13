@@ -7,6 +7,20 @@ import (
 	"strings"
 )
 
+// In config.go
+
+var globalConfig *Config
+
+// SetConfig sets the global configuration
+func SetConfig(cfg *Config) {
+	globalConfig = cfg
+}
+
+// GetConfig returns the current configuration
+func GetConfig() *Config {
+	return globalConfig
+}
+
 // Config holds all application configuration
 type Config struct {
 	// Server settings
@@ -30,7 +44,7 @@ type Config struct {
 	S3DisableSSL bool   `mapstructure:"s3_disable_ssl"`
 }
 
-// Bind environment variables automatically
+// BindEnvVars Bind environment variables automatically
 func BindEnvVars(config Config) {
 	t := reflect.TypeOf(config)
 	for i := 0; i < t.NumField(); i++ {
