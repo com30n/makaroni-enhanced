@@ -1,21 +1,32 @@
-# Setting Up a Dev Environment with kind
+# Forked from https://github.com/kaero/makaroni
 
-This document outlines the steps to launch a local kind cluster using Helm, with placeholders for secrets and file paths. Replace the placeholders with your actual values as needed.
+# Makaroni
+Makaroni is a lightweight pastebin-like application that allows users to create and share text snippets and files.
+Written in Go, uses S3 for file storage.
+<img src="doc/images/index.png">
+<img src="doc/images/paste.png">
 
-## Prerequisites
+## Configuration
 
-- [brew](https://brew.sh/)
+
+# How to run
+
+## Docker Compose
+### Prerequisites
+
 - Go (recommended version 1.18+)
-- Helm (for kind environment)
+- Docker
 - Docker compose (for local dev environment)
-
-## Installation Steps
-
-### Docker Compose
 
 1. Just run `make dev`
 
-### Kind
+## Kind
+### Prerequisites
+
+- Go (recommended version 1.18+)
+- Kind (https://kind.sigs.k8s.io/)
+- Kind cloud provider (https://kind.sigs.k8s.io/docs/user/loadbalancer/)
+- Helm (for kind environment)
 
 1. **Install kind**  
    ```
