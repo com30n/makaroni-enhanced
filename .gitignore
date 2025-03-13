@@ -1,5 +1,5 @@
 ./makaroni
 bin
+/.idea/
 helm/makaroni/loca-values.yaml
 dev
-.idea!

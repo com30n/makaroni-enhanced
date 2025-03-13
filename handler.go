@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -152,7 +153,7 @@ func (p *PasteHandler) handlePostRequest(w http.ResponseWriter, req *http.Reques
 
 	var html string
 	if file != nil {
-		html, err = p.processFileUpload(req, file, header, keyRaw, metadata)
+		html, keyRaw, err = p.processFileUpload(req, file, header, keyRaw, metadata)
 	} else {
 		html, err = p.processTextUpload(req, content, keyRaw, urlRaw, metadata)
 	}
@@ -196,6 +197,10 @@ func (p *PasteHandler) handleDeleteRequest(w http.ResponseWriter, req *http.Requ
 	keysToDelete := []string{rawKey, htmlKey}
 	for _, key := range keysToDelete {
 		metadata, err := p.Uploader.GetMetadata(req.Context(), key)
+		if err != nil && err.(awserr.Error).Code() == "NotFound" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if err != nil {
 			log.Error("Error retrieving metadata: ", err)
 			p.RespondWithError(w, http.StatusNotFound, "Metadata not found", p.Config)
@@ -236,7 +241,7 @@ func (p *PasteHandler) generateKeys() (string, string, string, error) {
 }
 
 // processFileUpload handles file upload and returns the rendered HTML
-func (p *PasteHandler) processFileUpload(req *http.Request, file multipart.File, header *multipart.FileHeader, keyRaw string, metadata map[string]*string) (string, error) {
+func (p *PasteHandler) processFileUpload(req *http.Request, file multipart.File, header *multipart.FileHeader, keyRaw string, metadata map[string]*string) (string, string, error) {
 	fileExtension := filepath.Ext(header.Filename)
 	contentType := header.Header.Get("Content-Type")
 
@@ -246,7 +251,7 @@ func (p *PasteHandler) processFileUpload(req *http.Request, file multipart.File,
 
 	if err := p.Uploader.UploadReader(req.Context(), keyRaw, file, contentType, metadata); err != nil {
 		log.Error("Error uploading file: ", err)
-		return "", err
+		return "", "", err
 	}
 
 	log.Info("Uploaded file with key: ", keyRaw)
@@ -265,10 +270,10 @@ func (p *PasteHandler) processFileUpload(req *http.Request, file multipart.File,
 	downloadHtml, err := RenderFileDownload(data)
 	if err != nil {
 		log.Error("Error rendering file download HTML: ", err)
-		return "", err
+		return "", "", err
 	}
 
-	return string(downloadHtml), nil
+	return string(downloadHtml), keyRaw, nil
 }
 
 // processTextUpload handles text content upload and returns the rendered HTML

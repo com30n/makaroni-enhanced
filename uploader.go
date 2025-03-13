@@ -133,7 +133,7 @@ func (u *Uploader) GetMetadata(ctx context.Context, key string) (map[string]*str
 	result, err := u.s3Client.HeadObjectWithContext(ctx, input)
 	if err != nil {
 		log.Errorf("Error retrieving metadata for key: %s, error: %v", key, err)
-		return nil, fmt.Errorf("error retrieving metadata for key %s: %w", key, err)
+		return nil, err
 	}
 
 	return result.Metadata, nil

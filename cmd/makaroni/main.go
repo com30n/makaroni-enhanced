@@ -17,34 +17,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-func main() {
-	InitLogger()
-	log.Debug("Application starting (debug level)")
-
-	config, err := LoadConfig()
-	if err != nil {
-		log.Fatalf("Error loading configuration: %v", err)
-	}
-
-	makaroni.LogConfig()
-
-	server, err := SetupServer(config)
-	if err != nil {
-		log.Fatalf("Error setting up server: %v", err)
-	}
-
-	// Start server in a goroutine
-	go func() {
-		log.Infof("Server started on address %s", server.Addr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
-
-	// Setup graceful shutdown
-	WaitForShutdown(server)
-}
-
 // InitLogger initializes the logger.
 func InitLogger() {
 	log.SetFormatter(&log.TextFormatter{
@@ -60,22 +32,67 @@ func InitLogger() {
 	log.SetLevel(level)
 }
 
-// LoadConfig loads the configuration from flags and environment variables.
-func LoadConfig() (*makaroni.Config, error) {
-	var config makaroni.Config
+func main() {
+	InitLogger()
+	log.Debug("Application starting (debug level)")
+
+	rootCmd := setupRootCommand()
+	if err := rootCmd.Execute(); err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+}
+
+// setupRootCommand creates and configures the root command
+func setupRootCommand() *cobra.Command {
+	var config *makaroni.Config = &makaroni.Config{}
 
 	rootCmd := &cobra.Command{
 		Use:   "makaroni",
 		Short: "Makaroni is a paste service",
 		Long:  "A web service for sharing code snippets with syntax highlighting",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := viper.Unmarshal(&config); err != nil {
+			if err := viper.Unmarshal(config); err != nil {
 				log.Fatalf("Error parsing configuration: %v", err)
 			}
+
+			// Save configuration globally
+			makaroni.SetConfig(config)
+			config = makaroni.GetConfig()
+			makaroni.LogConfig()
+
+			server, err := SetupServer(config)
+			if err != nil {
+				log.Fatalf("Error setting up server: %v", err)
+			}
+
+			// Start server in a goroutine
+			go func() {
+				log.Infof("Server started on address %s", server.Addr)
+				if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					log.Fatalf("Server error: %v", err)
+				}
+			}()
+
+			// Setup graceful shutdown
+			WaitForShutdown(server)
+		},
+		// Runs before the main command handler
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Configure Viper
+			setupViper()
+			makaroni.BindEnvVars(*config) // Add this line
 		},
 	}
 
-	// Define flags
+	// Register flags
+	setupFlags(rootCmd)
+
+	return rootCmd
+}
+
+// setupFlags configures command line flags
+func setupFlags(rootCmd *cobra.Command) {
 	flags := rootCmd.Flags()
 	flags.String("address", "", "Address to serve")
 	flags.Int64("multipart-max-memory", 0, "Maximum memory for multipart forms")
@@ -92,25 +109,17 @@ func LoadConfig() (*makaroni.Config, error) {
 	flags.Bool("s3-path-style", false, "S3 use path style addressing")
 	flags.Bool("s3-disable-ssl", false, "S3 disable SSL")
 
-	// Bind flags with viper
+	// Bind flags with Viper
 	if err := viper.BindPFlags(flags); err != nil {
-		return nil, fmt.Errorf("error binding flags: %w", err)
+		log.Fatalf("Error binding flags: %v", err)
 	}
+}
 
-	// Setup Viper for environment variables
+// setupViper configures Viper for environment variable handling
+func setupViper() {
 	viper.SetEnvPrefix("MKRN")
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
-
-	// Bind environment variables automatically
-	makaroni.BindEnvVars(config)
-
-	if err := rootCmd.Execute(); err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	return &config, nil
 }
 
 // SetupServer creates and configures the HTTP server.
@@ -177,8 +186,6 @@ func SetupRoutes(indexHTML []byte, uploader *makaroni.Uploader, config *makaroni
 		MultipartMaxMemory: config.MultipartMaxMemory,
 		Config:             config,
 	})
-
-	// TODO: add an error page
 
 	return mux
 }
