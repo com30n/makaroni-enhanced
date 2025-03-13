@@ -84,7 +84,7 @@ func (p *PasteHandler) setCookies(w http.ResponseWriter, keyRaw, keyHtml, keyDel
 		Value:    encodedData,
 		Path:     "/",
 		Secure:   true,
-		HttpOnly: true,
+		HttpOnly: false,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   cookieMaxAge,
 	}

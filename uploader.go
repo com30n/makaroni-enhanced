@@ -56,11 +56,12 @@ func NewUploader(config UploaderConfig) (*Uploader, error) {
 	}
 
 	awsSession, err := session.NewSession(&aws.Config{
-		Credentials:      credentials.NewStaticCredentials(config.KeyID, config.Secret, ""),
-		Endpoint:         &config.Endpoint,
-		Region:           &config.Region,
-		S3ForcePathStyle: &config.PathStyleAddressing,
-		DisableSSL:       &config.DisableSSL,
+		Credentials:         credentials.NewStaticCredentials(config.KeyID, config.Secret, ""),
+		Endpoint:            &config.Endpoint,
+		Region:              &config.Region,
+		S3ForcePathStyle:    &config.PathStyleAddressing,
+		DisableSSL:          &config.DisableSSL,
+		LowerCaseHeaderMaps: aws.Bool(true),
 	})
 	if err != nil {
 		log.Error("Failed to create AWS session: ", err)
