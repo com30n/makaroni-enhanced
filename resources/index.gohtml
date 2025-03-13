@@ -496,7 +496,7 @@
             const dateCreated = document.createElement('span');
             dateCreated.className = 'paste-date';
             const pasteDate = new Date(paste.create_time);
-            dateCreated.textContent = `Created: ${pasteDate.toLocaleString()}`;
+            dateCreated.textContent = `Created: ${pasteDate.toLocaleString("en-GB")}`;
 
             header.appendChild(dateCreated);
             pasteItem.appendChild(header);
